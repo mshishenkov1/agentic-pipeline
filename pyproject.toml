@@ -1,0 +1,44 @@
+[project]
+name = "agentic-pipeline"
+version = "0.1.0"
+description = "Конвейер агентной разработки и тестирования в Claude Code"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+# Зависимости продукта добавляет dev-agent под конкретный проект.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov",
+    "diff-cover",
+    "mutmut>=2.4",
+    "ruff",
+    "mypy",
+    "pyyaml",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ac(id): привязка теста к критерию приёмки (например AC-01)",
+    "flaky_suspect: тест помечен TEST-агентом как нестабильный",
+]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.mutmut]
+source_paths = ["src/"]
+pytest_add_cli_args_test_selection = ["tests/"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+ignore_missing_imports = true
+check_untyped_defs = true

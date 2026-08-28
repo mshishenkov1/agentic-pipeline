@@ -1,0 +1,249 @@
+# ============================================================
+# Конфигурация конвейера агентной разработки.
+# ИЗМЕНЕНИЕ ЭТОГО ФАЙЛА — ТОЛЬКО ЧЕЛОВЕКОМ.
+# Агентам запись запрещена (hook guard_write + CI-проверка).
+# Ни один агент не имеет права понижать пороги гейтов.
+# ============================================================
+
+stack: python
+base_branch: main
+
+# ============================================================
+# Топология репозитория. Решается АРХИТЕКТОРОМ на проекте и
+# фиксируется ADR (см. knowledge/system-design/08-критерии-решений-и-adr.md).
+#   flat      — один пакет: зоны src/ и tests/ (умолчание, текущее поведение)
+#   monorepo  — несколько сервисов в одном репозитории, работа по scope
+#   multirepo — сервис = репозиторий, конвейер разворачивается в каждый
+# ============================================================
+topology: flat
+
+# Карта сервисов. Пуста при topology: flat.
+# Для monorepo/multirepo каждый сервис описывает СВОИ команды и маркеры —
+# языки и инструменты у сервисов разные.
+services: {}
+# Пример:
+# services:
+#   orders:
+#     path: services/orders
+#     language: go
+#     owner: team-orders
+#     ac_marker: '// ac:(AC-\d+)'          # как в тестах помечается критерий приёмки
+#     test_file_glob: '**/*_test.go'
+#     test_def: '^func (Test\w+)'
+#     commands:
+#       test: "cd services/orders && go test ./..."
+#       test_single: "cd services/orders && go test -run {test_id} ./..."
+#       lint: "cd services/orders && golangci-lint run"
+#       typecheck: ""
+#       coverage: "cd services/orders && go test -coverprofile=../../reports/cov-orders.out ./..."
+#       mutation: "cd services/orders && gremlins unleash --tags=''"
+#     mutation_tool: gremlins        # gremlins | stryker | pit | cargo-mutants | mutmut
+#     # либо свой разбор: mutation_score_regex: 'Score:\s+([\d.]+)%'
+#     test_layers:
+#       unit:        {path: tests/unit, required: true,  command: "cd services/orders && go test ./tests/unit/..."}
+#       contract:    {path: tests/contract, required: true, command: "cd services/orders && go test ./tests/contract/..."}
+#       integration: {path: tests/integration, required: false, command: "cd services/orders && go test -tags=integration ./tests/integration/..."}
+#   catalog:
+#     path: services/catalog
+#     language: python
+#     owner: team-catalog
+#     commands:
+#       test: "services/catalog/.venv/bin/pytest -q services/catalog/tests"
+#       lint: "ruff check services/catalog"
+#       typecheck: "mypy services/catalog/src"
+
+# ============================================================
+# Инфраструктурный код (Terraform, Helm, манифесты).
+# Пустой path отключает роль infra и гейт G12.
+# apply_allowed — среды, куда infra-agent имеет право раскатывать САМ.
+# Прод в этот список не входит НИКОГДА: только человек.
+# ============================================================
+infra:
+  path: ""
+  environments: []
+  apply_allowed: []
+  commands:
+    validate: ""
+    plan: ""
+    policy: ""
+    apply: ""
+# Пример:
+# infra:
+#   path: deploy
+#   environments: [dev, stage, prod]
+#   apply_allowed: [dev, stage]
+#   commands:
+#     validate: "terraform -chdir=deploy validate"
+#     plan: "terraform -chdir=deploy plan -var-file=envs/{env}.tfvars -out=tfplan-{env}"
+#     policy: "conftest test deploy"
+#     apply: "terraform -chdir=deploy apply tfplan-{env}"
+
+# ============================================================
+# Слои тестов (G14). Пустая секция отключает гейт.
+# unit гоняется на каждой итерации фикс-цикла; остальные — перед гейтами.
+# Сервис может переопределить секцию целиком через services.<имя>.test_layers.
+# ============================================================
+test_layers: {}
+# Пример для плоского проекта:
+# test_layers:
+#   unit:        {path: tests, required: true, command: ".venv/bin/pytest -q tests"}
+#   contract:    {path: tests/contract, required: false, command: ".venv/bin/pytest -q tests/contract"}
+#   integration: {path: tests/integration, required: false, command: ".venv/bin/pytest -q -m integration"}
+#   e2e:         {path: tests/e2e, required: false, command: ".venv/bin/pytest -q tests/e2e"}
+
+# Общие артефакты монорепозитория: их изменение не считается нарушением
+# зоны ни для одной роли (lock-файлы, сгенерированные клиенты и т.п.).
+shared_artifacts: []
+# Пример: ["go.work.sum", "generated/", "**/openapi.gen.go"]
+
+limits:
+  # Лимит итераций фикс-цикла на один баг (ТЗ §4)
+  max_iterations_per_bug: 3
+  # Раундов вопросов intake-agent человеку в фазе системного дизайна
+  max_intake_rounds: 4
+  # Циклов дизайн-ревью до эскалации человеку
+  max_design_review_cycles: 2
+  # Циклов состязательной проверки (red team) на дизайн
+  max_redteam_cycles: 1
+
+# ============================================================
+# Фаза системного дизайна.
+# Выполняется ОДИН РАЗ в начале проекта командой /system-design
+# и далее только по явному вызову (/design-change).
+# В обычный прогон /pipeline НЕ входит: requirements.md и
+# system-design.md там — вход только на чтение.
+# ============================================================
+system_design:
+  requirements_file: requirements.md
+  design_file: system-design.md
+  decisions_dir: decisions/
+  contracts_dir: contracts/
+  # Справочная база знаний, которую читают intake- и architect-agent.
+  # Защищена от записи агентами: наполняет её человек.
+  knowledge_dir: knowledge/system-design/
+  migration_plan: migration-plan.md
+  loadtests_dir: loadtests/
+  perf_reports_dir: reports/perf/
+  # Наблюдаемая телеметрия: приоритетнее справочных чисел
+  observed_dir: knowledge/observed/
+  # Узкие ревьюеры дизайна (работают в роли review, каждый под своим углом)
+  specialist_reviewers: [reviewer-scale, reviewer-data, reviewer-resilience,
+                         reviewer-security, reviewer-cost]
+  # Кто утверждает архитектуру перед стартом разработки:
+  #   human        — дизайн-ревью субагентом, сводка оркестратора, апрув человека
+  #   review_agent — достаточно вердикта дизайн-ревью
+  #   none         — апрув не требуется (только для черновых прогонов)
+  approval: human
+
+thresholds:
+  # G2: покрытие новых/изменённых строк (coverage-diff), %
+  coverage_diff: 90
+  # G3: mutation score на затронутых модулях, %
+  mutation_score: 70
+  # G10: во сколько раз измерение может разойтись с предсказанием.
+  # Зависит от заявленной архитектором уверенности — завышать уверенность невыгодно.
+  capacity_tolerance:
+    high: 1.5
+    medium: 2.0
+    low: 3.0
+
+commands:
+  test: ".venv/bin/python -m pytest -q -rs --tb=short"
+  test_single: ".venv/bin/python -m pytest -q --tb=long {test_id}"
+  coverage: ".venv/bin/python -m pytest -q --cov=src --cov-report=xml:reports/coverage.xml --cov-report=term"
+  coverage_diff: ".venv/bin/diff-cover reports/coverage.xml --compare-branch={base} --fail-under={threshold}"
+  mutation: ".venv/bin/mutmut run"
+  lint: ".venv/bin/ruff check src tests"
+  typecheck: ".venv/bin/mypy src"
+
+# Зоны записи по ролям (принцип минимальных привилегий, ТЗ §6.1).
+# Проверяются hook'ом на каждую запись файла и diff-проверкой
+# после каждого шага субагента (защита от подгонки, ТЗ §4).
+zones:
+  orchestrator:
+    allow: ["state.json", "reports/", "bugs/", "examples/"]
+    deny: ["src/", "tests/"]
+  # Фаза системного дизайна: сбор требований (intake) и проектирование (architect).
+  # Обе роли вне обычного прогона /pipeline.
+  intake:
+    allow: ["requirements.md", "reports/"]
+    deny: ["src/", "tests/", "spec.md", "acceptance-criteria.yaml", "system-design.md"]
+  architect:
+    allow: ["system-design.md", "migration-plan.md", "decisions/", "contracts/",
+            "docs/", "reports/"]
+    deny: ["src/", "tests/", "requirements.md", "acceptance-criteria.yaml"]
+  # Нагрузочная проверка: сценарии и измерения, но не код продукта
+  perf:
+    allow: ["loadtests/", "reports/", "bugs/"]
+    deny: ["src/", "tests/", "system-design.md", "requirements.md"]
+  spec:
+    allow: ["spec.md", "acceptance-criteria.yaml", "reports/"]
+    deny: []
+  dev:
+    allow: ["src/", "disputes/", "pyproject.toml"]
+    deny: ["tests/"]
+  test:
+    allow: ["tests/", "bugs/", "reports/"]
+    deny: ["src/"]
+  review:
+    allow: ["reports/", "disputes/"]
+    deny: ["src/", "tests/"]
+  # Инфраструктурный код. Активна только при заданном infra.path.
+  infra:
+    allow: ["deploy/", "infra/", "reports/"]
+    deny: ["src/", "tests/"]
+
+# Шаблонные зоны для topology: monorepo | multirepo.
+# {service}  — путь каждого сервиса из state.scope.services
+# {foreign}  — пути сервисов ВНЕ области работы (жёсткий deny)
+# {services} — пути всех сервисов
+# {infra}    — путь инфраструктурного кода
+# Применяются только когда scope непуст; иначе действует плоская секция zones.
+zone_templates:
+  orchestrator:
+    allow: ["state.json", "reports/", "bugs/", "examples/"]
+    deny: ["{services}", "{infra}"]
+  dev:
+    allow: ["{service}/src/", "{service}/internal/", "{service}/cmd/",
+            "{service}/pyproject.toml", "{service}/go.mod", "{service}/package.json",
+            "disputes/"]
+    deny: ["{service}/tests/", "{foreign}", "{infra}"]
+  test:
+    allow: ["{service}/tests/", "bugs/", "reports/"]
+    deny: ["{service}/src/", "{service}/internal/", "{foreign}", "{infra}"]
+  infra:
+    allow: ["{infra}", "reports/"]
+    deny: ["{services}"]
+  perf:
+    allow: ["loadtests/", "reports/", "bugs/"]
+    deny: ["{services}", "{infra}"]
+  review:
+    allow: ["reports/", "disputes/"]
+    deny: ["{services}", "{infra}"]
+  architect:
+    allow: ["system-design.md", "migration-plan.md", "decisions/", "contracts/",
+            "docs/", "reports/"]
+    deny: ["{services}", "{infra}", "requirements.md", "acceptance-criteria.yaml"]
+  intake:
+    allow: ["requirements.md", "reports/"]
+    deny: ["{services}", "{infra}", "spec.md", "acceptance-criteria.yaml",
+           "system-design.md"]
+  spec:
+    allow: ["spec.md", "acceptance-criteria.yaml", "reports/"]
+    deny: ["{services}", "{infra}"]
+
+# Пути, запрещённые к изменению любым агентом (только человек)
+protected:
+  - "pipeline.config.yaml"
+  - ".claude/"
+  - ".github/"
+  - "knowledge/"
+
+# Сетевой allow-list (ТЗ §7): агенты не обращаются к внешним
+# боевым системам; допустимы только зеркала пакетов.
+network_allowlist:
+  - "pypi.org"
+  - "files.pythonhosted.org"
+
+# Уровень автономности (ТЗ §9): L0 | L1 | L2 | L3
+autonomy_level: L1

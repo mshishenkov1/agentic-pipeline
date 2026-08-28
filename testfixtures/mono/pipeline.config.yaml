@@ -1,0 +1,31 @@
+topology: monorepo
+services:
+  orders: {path: services/orders, language: go, owner: team-orders}
+  catalog: {path: services/catalog, language: python, owner: team-catalog}
+infra:
+  path: deploy
+  environments: [dev, stage, prod]
+  apply_allowed: [dev, stage]
+  commands:
+    validate: "echo validate ok"
+    plan: "echo 'Plan: 1 to add, 0 to change, 2 to destroy'"
+    policy: "echo policy ok"
+shared_artifacts: ["generated/", "go.work.sum"]
+zones:
+  dev: {allow: ["src/", "disputes/"], deny: ["tests/"]}
+  test: {allow: ["tests/", "bugs/"], deny: ["src/"]}
+protected: ["pipeline.config.yaml", ".claude/", "knowledge/"]
+zone_templates:
+  dev:
+    allow: ["{service}/src/", "{service}/go.mod", "disputes/"]
+    deny: ["{service}/tests/", "{foreign}", "{infra}"]
+  test:
+    allow: ["{service}/tests/", "bugs/", "reports/"]
+    deny: ["{service}/src/", "{foreign}", "{infra}"]
+  infra:
+    allow: ["{infra}", "reports/"]
+    deny: ["{services}"]
+
+test_layers:
+  unit: {path: tests, required: true, command: "echo unit ok"}
+  contract: {path: tests/contract, required: true, command: "echo contract ok"}

@@ -1,0 +1,14 @@
+{
+  "run_id": null,
+  "stage": "idle",
+  "current_agent": "orchestrator",
+  "requirements_file": null,
+  "branch": null,
+  "iteration": 0,
+  "design_status": "not_started",
+  "scope": {},
+  "bugs": [],
+  "escalations": [],
+  "gates": {},
+  "history": []
+}
